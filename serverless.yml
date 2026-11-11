@@ -1,0 +1,117 @@
+org: luisnieva
+service: ms-tareas
+
+provider:
+  name: aws
+  runtime: python3.12
+  timeout: 30
+  iam:
+    role: arn:aws:iam::${aws:accountId}:role/LabRole
+  environment:
+    TOPIC_TAREAS_ARN: arn:aws:sns:${aws:region}:${aws:accountId}:tema-tareas
+
+functions:
+  crearTarea:
+    name: CrearTarea
+    handler: crear_tarea.lambda_handler
+    events:
+      - http:
+          path: /tareas/crear
+          method: post
+          cors: true
+          integration: lambda
+  listarTareas:
+    name: ListarTareas
+    handler: listar_tareas.lambda_handler
+    events:
+      - http:
+          path: /tareas/listar
+          method: post
+          cors: true
+          integration: lambda
+  buscarTarea:
+    name: BuscarTarea
+    handler: buscar_tarea.lambda_handler
+    events:
+      - http:
+          path: /tareas/buscar
+          method: post
+          cors: true
+          integration: lambda
+  modificarTarea:
+    name: ModificarTarea
+    handler: modificar_tarea.lambda_handler
+    events:
+      - http:
+          path: /tareas/modificar
+          method: put
+          cors: true
+          integration: lambda
+  eliminarTarea:
+    name: EliminarTarea
+    handler: eliminar_tarea.lambda_handler
+    events:
+      - http:
+          path: /tareas/eliminar
+          method: delete
+          cors: true
+          integration: lambda
+
+resources:
+  Resources:
+    TablaTareas:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: t_tareas
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: tarea_id
+            AttributeType: S
+          - AttributeName: proyecto_id
+            AttributeType: S
+          - AttributeName: fecha_limite
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: tarea_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: gsi_proyecto
+            KeySchema:
+              - AttributeName: tenant_id
+                KeyType: HASH
+              - AttributeName: proyecto_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: gsi_fecha_limite
+            KeySchema:
+              - AttributeName: tenant_id
+                KeyType: HASH
+              - AttributeName: fecha_limite
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    TemaTareas:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: tema-tareas
+
+    # La cola cola-proyectos-eventos la crea ms-proyectos (hay que desplegarlo antes).
+    # Solo pasan a la cola los eventos de tareas, filtrados por tipo_evento.
+    SuscripcionProyectosATareas:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: !Ref TemaTareas
+        Protocol: sqs
+        Endpoint: arn:aws:sqs:${aws:region}:${aws:accountId}:cola-proyectos-eventos
+        FilterPolicy:
+          tipo_evento:
+            - TareaCreada
+            - TareaCompletada
+            - TareaReabierta
+            - TareaEliminada
