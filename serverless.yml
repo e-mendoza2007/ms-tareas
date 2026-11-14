@@ -11,46 +11,30 @@ provider:
     TOPIC_TAREAS_ARN: arn:aws:sns:${aws:region}:${aws:accountId}:tema-tareas
 
 functions:
-  crearTarea:
-    name: CrearTarea
-    handler: crear_tarea.lambda_handler
+  tareas:
+    name: Tareas
+    handler: tareas.lambda_handler
     events:
       - http:
           path: /tareas/crear
           method: post
           cors: true
           integration: lambda
-  listarTareas:
-    name: ListarTareas
-    handler: listar_tareas.lambda_handler
-    events:
       - http:
           path: /tareas/listar
           method: post
           cors: true
           integration: lambda
-  buscarTarea:
-    name: BuscarTarea
-    handler: buscar_tarea.lambda_handler
-    events:
       - http:
           path: /tareas/buscar
           method: post
           cors: true
           integration: lambda
-  modificarTarea:
-    name: ModificarTarea
-    handler: modificar_tarea.lambda_handler
-    events:
       - http:
           path: /tareas/modificar
           method: put
           cors: true
           integration: lambda
-  eliminarTarea:
-    name: EliminarTarea
-    handler: eliminar_tarea.lambda_handler
-    events:
       - http:
           path: /tareas/eliminar
           method: delete
