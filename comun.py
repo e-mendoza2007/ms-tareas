@@ -1,4 +1,5 @@
 import json
+import time
 import boto3
 from decimal import Decimal
 
@@ -43,18 +44,30 @@ def _token(event):
     return headers.get('authorization')
 
 
+# Cache en memoria del contenedor: evita invocar ValidarTokenAcceso en cada peticion (reduce Lambdas simultaneos)
+_CACHE_TOKENS = {}
+TTL_TOKEN = 60
+
+
 def autenticar(event):
     """Valida el token con ValidarTokenAcceso.
     Devuelve {'tenant_id', 'usuario_id', 'rol', ...} o None si no es valido."""
     token = _token(event)
     if not token:
         return None
+    ahora = time.time()
+    guardado = _CACHE_TOKENS.get(token)
+    if guardado and guardado[0] > ahora:
+        return guardado[1]
     r = _lambda.invoke(FunctionName='ValidarTokenAcceso',
                        InvocationType='RequestResponse',
                        Payload=json.dumps({'token': token}))
     datos = json.loads(r['Payload'].read())
     if datos.get('statusCode') != 200:
         return None
+    if len(_CACHE_TOKENS) > 200:
+        _CACHE_TOKENS.clear()
+    _CACHE_TOKENS[token] = (ahora + TTL_TOKEN, datos)
     return datos
 
 
