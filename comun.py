@@ -1,10 +1,10 @@
 import json
 import time
+from datetime import datetime
 import boto3
 from decimal import Decimal
 
 dynamodb = boto3.resource('dynamodb')
-_lambda = boto3.client('lambda')
 _sns = boto3.client('sns')
 
 ESTADOS = ('PENDIENTE', 'EN_CURSO', 'COMPLETADA')
@@ -44,27 +44,27 @@ def _token(event):
     return headers.get('authorization')
 
 
-# Cache en memoria del contenedor: evita invocar ValidarTokenAcceso en cada peticion (reduce Lambdas simultaneos)
+# Cache en memoria del contenedor: evita leer t_tokens_acceso en cada peticion
 _CACHE_TOKENS = {}
 TTL_TOKEN = 60
 
 
 def autenticar(event):
-    """Valida el token con ValidarTokenAcceso.
-    Devuelve {'tenant_id', 'usuario_id', 'rol', ...} o None si no es valido."""
-    token = _token(event)
+    """Valida el token leyendo t_tokens_acceso directo (sin invocar otra Lambda: cada
+    peticion usa 1 sola Lambda). Devuelve {'tenant_id', 'usuario_id', 'rol'} o None."""
+    headers = {k.lower(): v for k, v in (event.get('headers') or {}).items()}
+    token = headers.get('authorization')
     if not token:
         return None
     ahora = time.time()
     guardado = _CACHE_TOKENS.get(token)
     if guardado and guardado[0] > ahora:
         return guardado[1]
-    r = _lambda.invoke(FunctionName='ValidarTokenAcceso',
-                       InvocationType='RequestResponse',
-                       Payload=json.dumps({'token': token}))
-    datos = json.loads(r['Payload'].read())
-    if datos.get('statusCode') != 200:
+    item = dynamodb.Table('t_tokens_acceso').get_item(Key={'token': token}).get('Item')
+    if not item or datetime.now().strftime('%Y-%m-%d %H:%M:%S') > item['expires']:
         return None
+    datos = {'statusCode': 200, 'tenant_id': item['tenant_id'],
+             'usuario_id': item['usuario_id'], 'rol': item['rol']}
     if len(_CACHE_TOKENS) > 200:
         _CACHE_TOKENS.clear()
     _CACHE_TOKENS[token] = (ahora + TTL_TOKEN, datos)
@@ -72,15 +72,13 @@ def autenticar(event):
 
 
 def proyecto_existe(event, proyecto_id):
-    """Pregunta a ms-proyectos (Lambda BuscarProyecto) si el proyecto existe.
-    Reusa el mismo token, asi Proyectos valida el tenant por su cuenta."""
-    payload = {'headers': {'Authorization': _token(event)},
-               'body': {'proyecto_id': proyecto_id}}
-    r = _lambda.invoke(FunctionName='BuscarProyecto',
-                       InvocationType='RequestResponse',
-                       Payload=json.dumps(payload))
-    datos = json.loads(r['Payload'].read())
-    return datos.get('statusCode') == 200
+    """Comprueba en t_proyectos (mismo tenant del token) si el proyecto existe, sin invocar otra Lambda."""
+    sesion = autenticar(event)
+    if not sesion:
+        return False
+    r = dynamodb.Table('t_proyectos').get_item(
+        Key={'tenant_id': sesion['tenant_id'], 'proyecto_id': proyecto_id})
+    return 'Item' in r
 
 
 def parametros_lista(body):

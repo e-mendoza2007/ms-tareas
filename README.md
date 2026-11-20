@@ -5,7 +5,7 @@ Microservicio de Tareas del SaaS PPM (multi-tenant, serverless).
 ## Despliegue
 
 1. Antes deben estar desplegados `ms-auth` y `ms-proyectos`
-   (Tareas invoca `ValidarTokenAcceso` y `BuscarProyecto`, y se suscribe a `cola-proyectos-eventos`).
+   (Tareas lee `t_tokens_acceso` y `t_proyectos` directo (sin invocar Lambdas), y se suscribe a `cola-proyectos-eventos`).
 2. `serverless deploy`
 
 Crea: 1 Lambda, la tabla `t_tareas` (con GSI por proyecto y por fecha_limite),
